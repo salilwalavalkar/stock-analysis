@@ -21,12 +21,12 @@ public class TestHBase {
 		// StockDatabase to be used as a DAO for the stock price data.
 		StockDatabase db = new StockDatabase(config);
 
-//		// Drop and add the table.
-//		deleteExistingTables(db);
-//
-//		// Import the sample data.
-//		importCSVData(db, "rawdata/GOOG.csv", "GOOG");
-//		importCSVData(db, "rawdata/AAPL.csv", "AAPL");
+		// Drop and add the table.
+		deleteExistingTables(db);
+
+		// Import the sample data.
+		importCSVData(db, "rawdata/GOOG.csv", "GOOG");
+		importCSVData(db, "rawdata/AAPL.csv", "AAPL");
 
 		// Get a single cell.
 		System.out.println("GOOG 5/16 close is " + db.getCell("2016-05-16", "GOOG", StockDatabase.COL_CLOSE));
