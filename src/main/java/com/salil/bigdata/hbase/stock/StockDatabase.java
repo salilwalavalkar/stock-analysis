@@ -16,9 +16,15 @@ import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.client.Table;
+import org.apache.hadoop.hbase.filter.BinaryComparator;
+import org.apache.hadoop.hbase.filter.CompareFilter;
 import org.apache.hadoop.hbase.filter.Filter;
 import org.apache.hadoop.hbase.filter.PageFilter;
 import org.apache.hadoop.hbase.filter.PrefixFilter;
+import org.apache.hadoop.hbase.filter.RegexStringComparator;
+import org.apache.hadoop.hbase.filter.RowFilter;
+import org.apache.hadoop.hbase.filter.SingleColumnValueFilter;
+import org.apache.hadoop.hbase.filter.SubstringComparator;
 import org.apache.hadoop.hbase.util.Bytes;
 
 /**
@@ -38,6 +44,48 @@ public class StockDatabase {
 	public final static byte[] COL_LOW = "low".getBytes();
 	public final static byte[] COL_CLOSE = "close".getBytes();
 	public final static byte[] COL_VOLUME = "volume".getBytes();
+
+	public enum CustomFilter {
+		PREFIX {
+			/**
+			 * Match using binary comparison. Equals, Not equals, Greater than etc. 
+			 */
+			@Override
+			Filter getFilter(String compareValue) {
+				return new PrefixFilter(Bytes.toBytes(compareValue));
+			}
+		},		
+		BINARY {
+			/**
+			 * Match using binary comparison. Equals, Not equals, Greater than etc. 
+			 */
+			@Override
+			Filter getFilter(String compareValue) {
+				return new RowFilter(CompareFilter.CompareOp.EQUAL,
+						new BinaryComparator(Bytes.toBytes(compareValue)));
+			}
+		},
+		REGEX {
+			/**
+			 * Match using regular expression. 
+			 */
+			@Override
+			Filter getFilter(String compareValue) {
+				return new RowFilter(CompareFilter.CompareOp.EQUAL, new RegexStringComparator(compareValue));
+			}
+		},
+		SUBSTR {
+			/**
+			 * Match using substring. 
+			 */
+			@Override
+			Filter getFilter(String compareValue) {
+				return new RowFilter(CompareFilter.CompareOp.EQUAL, new SubstringComparator(compareValue));
+			}
+		};		
+
+		abstract Filter getFilter(String compareValue);
+	}
 
 	// HBase configuration
 	private final Configuration config;
@@ -136,7 +184,8 @@ public class StockDatabase {
 	}
 
 	/**
-	 * Specifies a range of rows to retrieve based on a starting and ending row key.
+	 * Specifies a range of rows to retrieve based on a starting and ending row
+	 * key.
 	 */
 	public void getRows(String symbol, String startDate, String endDate) throws IOException {
 		ResultScanner results = null;
@@ -161,7 +210,7 @@ public class StockDatabase {
 				results.close();
 		}
 	}
-	
+
 	/**
 	 * Specifies a range of rows to retrieve based on a starting row key and
 	 * retrieves up to limit rows.
@@ -175,10 +224,63 @@ public class StockDatabase {
 			Scan scan = new Scan();
 			// start at a specific rowkey.
 			scan.setStartRow(constructKey(symbol, startDate));
-			 // Cache only limited rows.
-			 scan.setCaching(limit);
-			 // Set a server side inbuilt filter for pagination.
-			 scan.setFilter(new PageFilter(limit));
+			// Cache only limited rows.
+			scan.setCaching(limit);
+			// Set a server side inbuilt filter for pagination.
+			scan.setFilter(new PageFilter(limit));
+			// Get the scan results
+			results = table.getScanner(scan);
+			int cnt = 1;
+			for (Result r : results) {
+				System.out.println("Record no: " + (cnt++));
+				printRowData(r);
+			}
+		} finally {
+			// ResultScanner must be closed.
+			if (results != null)
+				results.close();
+		}
+	}
+
+	/**
+	 * Specifies a range of rows matching the given prefix for row key.
+	 */
+	public void getRows(String compareValue, CustomFilter customFilter) throws IOException {
+		ResultScanner results = null;
+		try (Connection conn = ConnectionFactory.createConnection(config)) {
+			// Get the table
+			Table table = conn.getTable(TableName.valueOf(TABLE_NAME));
+			// Create the scan
+			Scan scan = new Scan();
+			scan.setFilter(customFilter.getFilter(compareValue));
+			// Get the scan results
+			results = table.getScanner(scan);
+			int cnt = 1;
+			for (Result r : results) {
+				System.out.println("Record no: " + (cnt++));
+				printRowData(r);
+			}
+		} finally {
+			// ResultScanner must be closed.
+			if (results != null)
+				results.close();
+		}
+	}
+
+	/**
+	 * Specifies a range of rows matching the given string in a column value.
+	 */
+	public void getRowsSingleColumnFilter(String compareValue, byte[] columnFamily, byte[] qualifier) throws IOException {
+		ResultScanner results = null;
+		try (Connection conn = ConnectionFactory.createConnection(config)) {
+			// Get the table
+			Table table = conn.getTable(TableName.valueOf(TABLE_NAME));
+			// Create the scan
+			Scan scan = new Scan();
+			SingleColumnValueFilter columnFilter = new SingleColumnValueFilter(columnFamily, qualifier,
+					CompareFilter.CompareOp.EQUAL, new SubstringComparator(compareValue));
+			columnFilter.setFilterIfMissing(true);			
+			scan.setFilter(columnFilter);
 			// Get the scan results
 			results = table.getScanner(scan);
 			int cnt = 1;
@@ -193,32 +295,6 @@ public class StockDatabase {
 		}
 	}
 	
-	/**
-	 * Specifies a range of rows matching the given prefix for row key.
-	 */
-	public void getRows(String prefix) throws IOException {
-		ResultScanner results = null;
-		try (Connection conn = ConnectionFactory.createConnection(config)) {
-			// Get the table
-			Table table = conn.getTable(TableName.valueOf(TABLE_NAME));
-			// Create the scan
-			Scan scan = new Scan(Bytes.toBytes(prefix));
-			Filter prefixFilter = new PrefixFilter(Bytes.toBytes(prefix));
-			scan.setFilter(prefixFilter);
-			// Get the scan results
-			results = table.getScanner(scan);
-			int cnt = 1;
-			for (Result r : results) {
-				System.out.println("Record no: " + (cnt++));
-				printRowData(r);
-			}
-		} finally {
-			// ResultScanner must be closed.
-			if (results != null)
-				results.close();
-		}
-	}	
-
 	/**
 	 * Print complete row data including all column families and values.
 	 */
@@ -243,35 +319,4 @@ public class StockDatabase {
 		}
 		System.out.println("------------------------------------");
 	}
-
-	// public void ScanRows(String startDate, String symbol, int limit,
-	// DataScanner2 scanner) throws IOException {
-	// ResultScanner results = null;
-	// try (Connection conn = ConnectionFactory.createConnection(config)) {
-	// // Get the table
-	// Table table = conn.getTable(TableName.valueOf(TABLE_NAME));
-	// // Create the scan
-	// Scan scan = new Scan();
-	// // start at a specific rowkey.
-	// scan.setStartRow(constructKey(symbol, startDate));
-	// // Tell the server not to cache more than limit rows
-	// // since we won;t need them
-	// scan.setCaching(limit);
-	// // Can also set a server side filter
-	// scan.setFilter(new PageFilter(limit));
-	// // Get the scan results
-	// results = table.getScanner(scan);
-	// // Iterate over the scan results and break at the limit
-	// int count = 0;
-	// for (Result r : results) {
-	// scanner.ProcessRow(r);
-	// if (count++ >= limit)
-	// break;
-	// }
-	// } finally {
-	// // ResultScanner must be closed.
-	// if (results != null)
-	// results.close();
-	// }
-	// }
 }

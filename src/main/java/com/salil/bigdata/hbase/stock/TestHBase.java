@@ -41,9 +41,21 @@ public class TestHBase {
 		db.getRows("GOOG", "2016-05-16", 3);
 		
 		// Get scan rows based on prefix filter for rowkey.
-		db.getRows("GOOG|2016-05");
+		db.getRows("GOOG|2016-05", StockDatabase.CustomFilter.PREFIX);
 		
-		//TODO: Other rowkey based filters.
+		// Get scan rows based on binary filter for equals rowkey.
+		db.getRows("GOOG|2016-05-16", StockDatabase.CustomFilter.BINARY);
+
+		// Get scan rows based on regex filter for equals rowkey.
+		db.getRows(".*-05-16", StockDatabase.CustomFilter.REGEX);
+
+		// Get scan rows based on substring filter for equals rowkey.
+		db.getRows("2016-05-16", StockDatabase.CustomFilter.SUBSTR);
+		
+		// Get rows matching column value.
+		db.getRowsSingleColumnFilter("716.49", StockDatabase.COLUMN_FAMILY, StockDatabase.COL_CLOSE);
+		
+		//TODO: Other column based filters.
 	}
 
 	/**
