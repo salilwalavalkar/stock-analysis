@@ -1,6 +1,8 @@
 package com.salil.bigdata.hbase.stock;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 
@@ -19,6 +21,8 @@ import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.hbase.filter.BinaryComparator;
 import org.apache.hadoop.hbase.filter.CompareFilter;
 import org.apache.hadoop.hbase.filter.Filter;
+import org.apache.hadoop.hbase.filter.FilterList;
+import org.apache.hadoop.hbase.filter.FilterList.Operator;
 import org.apache.hadoop.hbase.filter.PageFilter;
 import org.apache.hadoop.hbase.filter.PrefixFilter;
 import org.apache.hadoop.hbase.filter.RegexStringComparator;
@@ -100,6 +104,9 @@ public class StockDatabase {
 
 	/**
 	 * Creates the HBase table.
+	 * 
+	 * Pre-Split Table ? - No
+	 * 
 	 */
 	public void createTable() throws IOException {
 		try (Connection connection = ConnectionFactory.createConnection(config); Admin admin = connection.getAdmin()) {
@@ -135,7 +142,11 @@ public class StockDatabase {
 	}
 
 	/**
-	 * Creates a rowkey from stock name and date.
+	 * Create a rowkey from stock name and date.
+	 * 
+	 * We need rows with same stock to be after one another for faster GET/SCAN.
+	 * So not adding any salt/hash to key now. However current rowkey design
+	 * leads to region hot-spotting.
 	 */
 	static byte[] constructKey(String stock, String date) {
 		// Rowkey optimized so that stocks are close to each other.
@@ -164,14 +175,14 @@ public class StockDatabase {
 	/**
 	 * Gets a single cell given the date and stock symbol and column Id.
 	 */
-	public String getCell(String date, String symbol, byte[] column) throws IOException {
+	public String getCell(String date, String symbol, String column) throws IOException {
 		try (Connection conn = ConnectionFactory.createConnection(config)) {
 			// Get the table
 			Table table = conn.getTable(TableName.valueOf(TABLE_NAME));
 			// Construct a "getter" with the rowkey.
 			Get get = new Get(constructKey(symbol, date));
 			// Further refine the "get" with a column specification
-			get.addColumn(COLUMN_FAMILY, column);
+			get.addColumn(COLUMN_FAMILY, Bytes.toBytes(column));
 			// Get the result by passing the getter to the table
 			Result r = table.get(get);
 			// return the results
@@ -268,19 +279,25 @@ public class StockDatabase {
 	}
 
 	/**
-	 * Specifies a range of rows matching the given string in a column value.
+	 * Specifies a range of rows matching the column names and values in map.
 	 */
-	public void getRowsSingleColumnFilter(String compareValue, byte[] columnFamily, byte[] qualifier) throws IOException {
+	public void getRowsMultiColumnFilter(Map<String, String> qualifierVsColumnvalueMap) throws IOException {
 		ResultScanner results = null;
 		try (Connection conn = ConnectionFactory.createConnection(config)) {
 			// Get the table
 			Table table = conn.getTable(TableName.valueOf(TABLE_NAME));
 			// Create the scan
 			Scan scan = new Scan();
-			SingleColumnValueFilter columnFilter = new SingleColumnValueFilter(columnFamily, qualifier,
-					CompareFilter.CompareOp.EQUAL, new SubstringComparator(compareValue));
-			columnFilter.setFilterIfMissing(true);			
-			scan.setFilter(columnFilter);
+			
+			List<Filter> filterList = new ArrayList<Filter>();
+			for (Map.Entry<String, String> entry : qualifierVsColumnvalueMap.entrySet())
+			{
+				SingleColumnValueFilter columnFilter = new SingleColumnValueFilter(COLUMN_FAMILY, Bytes.toBytes(entry.getKey()),
+						CompareFilter.CompareOp.EQUAL, new SubstringComparator(entry.getValue()));
+				columnFilter.setFilterIfMissing(true);			
+				filterList.add(columnFilter);
+			}			
+			scan.setFilter(new FilterList(Operator.MUST_PASS_ALL, filterList));
 			// Get the scan results
 			results = table.getScanner(scan);
 			int cnt = 1;

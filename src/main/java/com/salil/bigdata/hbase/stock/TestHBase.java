@@ -1,6 +1,8 @@
 package com.salil.bigdata.hbase.stock;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
@@ -29,7 +31,8 @@ public class TestHBase {
 		importCSVData(db, "rawdata/AAPL.csv", "AAPL");
 
 		// Get a single cell.
-		System.out.println("GOOG 5/16 close is " + db.getCell("2016-05-16", "GOOG", StockDatabase.COL_CLOSE));
+		System.out
+				.println("GOOG 5/16 close is " + db.getCell("2016-05-16", "GOOG", "close"));
 
 		// Get a single row.
 		db.getRow("GOOG", "2016-05-16");
@@ -39,10 +42,10 @@ public class TestHBase {
 
 		// Get scan rows based on start date while limiting number of records.
 		db.getRows("GOOG", "2016-05-16", 3);
-		
+
 		// Get scan rows based on prefix filter for rowkey.
 		db.getRows("GOOG|2016-05", StockDatabase.CustomFilter.PREFIX);
-		
+
 		// Get scan rows based on binary filter for equals rowkey.
 		db.getRows("GOOG|2016-05-16", StockDatabase.CustomFilter.BINARY);
 
@@ -51,11 +54,13 @@ public class TestHBase {
 
 		// Get scan rows based on substring filter for equals rowkey.
 		db.getRows("2016-05-16", StockDatabase.CustomFilter.SUBSTR);
-		
-		// Get rows matching column value.
-		db.getRowsSingleColumnFilter("716.49", StockDatabase.COLUMN_FAMILY, StockDatabase.COL_CLOSE);
-		
-		//TODO: Other column based filters.
+
+		// Get rows matching column name and column value.
+		Map<String, String> qualifierVsColumnvalueMap = new HashMap<String, String>();
+		qualifierVsColumnvalueMap.put("close", "716.49");
+		qualifierVsColumnvalueMap.put("open", "709.13");
+		db.getRowsMultiColumnFilter(qualifierVsColumnvalueMap);
+
 	}
 
 	/**
